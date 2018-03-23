@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+
+import sys
+import argparse
+import json
+import subprocess
+import itertools
+
+import pprint
+pp = pprint.PrettyPrinter(indent=4).pprint
+
+args = None
+df_by_source = {}
+lsblk_devices = []
+
+def make_parser():
+    parser = argparse.ArgumentParser(
+        description=r"""
+Formats the output of `lsblk` and `df` together, for a more
+information-dense human display of the disks of a system.
+
+Note: `df` only available for mounted partitions.
+Note: '/dev/' are stripped from device names
+Note: '/dev/mapper/' is shortened to 'm/'
+""",
+        formatter_class=argparse.RawTextHelpFormatter)
+    return parser
+
+def load_lsblk():
+    global lsblk_devices
+    lsblk_columns=["name", "size", "tran", "vendor", "model", "type", "partlabel", "fstype", "mountpoint", "uuid", "label", "serial"]
+    lsblk_proc = subprocess.run([ "lsblk", "--json", "-pb", "--output", ",".join(lsblk_columns)], stdout=subprocess.PIPE)
+    lsblk_output = str(lsblk_proc.stdout, 'utf-8')
+    lsblk_json = json.loads(lsblk_output)
+    #pp(lsblk_json)
+    assert lsblk_json['blockdevices'] is not None
+    assert len(lsblk_json) == 1
+    lsblk_devices = lsblk_json['blockdevices']
+
+def load_df():
+    global df_by_source
+    df_columns=['source', 'fstype', 'size', 'used', 'avail', 'target', 'pcent']
+    df_proc = subprocess.run(['df', '--output='+','.join(df_columns), '--si'], stdout=subprocess.PIPE)
+    df_lines = str(df_proc.stdout, 'utf-8').splitlines()
+    #pp(df_lines)
+    assert len(df_lines) > 2, "Unexpected df output"
+    df_lines = df_lines[1:] # discard header
+    df_lines = [ l.strip() for l in df_lines ]
+    df_by_source = dict()
+    for df_line in df_lines:
+        disk = df_line.split(maxsplit=len(df_columns))
+        assert len(disk) == len(df_columns)
+        disk_dict = dict()
+        for i, col in enumerate(df_columns):
+            disk_dict[col] = disk[i]
+        df_by_source[disk_dict["source"]] = disk_dict
+
+def sep(s):
+    if s is not None and len(s) > 0:
+        return " " + s
+    return ""
+
+def sinum(n):
+    fmt = "%.3g"
+    scale = [
+        (1e3, 1, ''),
+        (1e6, 1e3, 'k'),
+        (1e9, 1e6, 'M'),
+        (1e12, 1e9, 'G'),
+    ]
+    for s in scale:
+        if n < s[0]:
+            return (fmt % (n / s[1])) + s[2]
+    return fmt % (n / 1e12) + "T"
+
+def print_devices(outtable, lsblks, depth=0):
+    for lsblki, lsblk in enumerate(lsblks):
+        pref = ""
+        d = depth
+        if d > 0:
+            while d > 1:
+                pref += "   "
+                d -= 1
+            if lsblki < len(lsblks) - 1:
+                pref += "├"
+            else:
+                pref += "└"
+            pref += "─ "
+
+        df = df_by_source.get(lsblk['name'])
+
+        for k, v in lsblk.items():
+            if v is None:
+                lsblk[k] = ""
+            elif hasattr(v, 'strip'):
+                lsblk[k] = v.strip()
+
+        outcols = []
+
+        name = lsblk["name"]
+        outcols.append(pref+name)
+        outcols.append(lsblk['mountpoint'])
+        #outcols.append(lsblk['type'])
+
+        info = ""
+        #info += lsblk['type']
+        info += sep(lsblk['tran'])
+        info += sep(lsblk["vendor"])
+        info += sep(lsblk["model"])
+        info += sep(lsblk["partlabel"])
+        info += sep(lsblk["fstype"])
+        info += sep(lsblk["label"])
+        outcols.append(pref + info.strip())
+
+        outcols.append(pref + sinum(int(lsblk['size'])))
+
+        if df:
+            assert df['target'] == lsblk['mountpoint']
+            outcols.append(df['pcent'])
+            outcols.append(df['used'])
+            outcols.append(df['avail'])
+        else:
+            outcols.append('')
+            outcols.append('')
+            outcols.append('')
+
+        serialuuid = ""
+        serialuuid += lsblk['serial']
+        serialuuid += " "
+        serialuuid += lsblk['uuid']
+        outcols.append(serialuuid)
+
+        outtable.append(outcols)
+
+        if "children" in lsblk:
+            print_devices(outtable, lsblk['children'], depth + 1)
+
+def main(rawargs):
+    global args
+    parser = make_parser()
+    args = parser.parse_args(rawargs)
+
+    load_lsblk()
+    load_df()
+
+    table = []
+    table.append([ 'Name', 'Mount', 'Info', 'Size', 'Used%', 'Used', 'Avail', 'Serial and  UUID' ])
+    print_devices(table, lsblk_devices)
+
+    maxw = [ max(len(cell) for cell in col) for col in itertools.zip_longest(*table, fillvalue="") ]
+    maxw[-1] = 0
+    for row in table:
+        print(" ".join("{:<{}}".format(cell, maxw[i]) for i, cell in enumerate(row)))
+
+if __name__ == "__main__":
+    ret = main(sys.argv[1:])
+    sys.exit(ret)
