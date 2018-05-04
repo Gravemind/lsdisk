@@ -19,9 +19,7 @@ def make_parser():
 Formats the output of `lsblk` and `df` together, for a more
 information-dense human display of the disks of a system.
 
-Note: `df` only available for mounted partitions.
-Note: '/dev/' are stripped from device names
-Note: '/dev/mapper/' is shortened to 'm/'
+Note: FS usage (`df`) only available for mounted partitions.
 """,
         formatter_class=argparse.RawTextHelpFormatter)
     return parser
