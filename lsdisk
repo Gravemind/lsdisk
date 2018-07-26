@@ -97,8 +97,13 @@ def print_devices(outtable, lsblks, depth=0):
 
         name = lsblk["name"]
         outcols.append(pref+name)
-        outcols.append(lsblk['mountpoint'])
-        #outcols.append(lsblk['type'])
+
+        ## mount bind can cause df['target'] != lsblk['mountpoint']
+        ## arbitrarily prefer df's mount point
+        if df:
+            outcols.append(df['target'])
+        else:
+            outcols.append(lsblk['mountpoint'])
 
         info = ""
         #info += lsblk['type']
@@ -113,7 +118,6 @@ def print_devices(outtable, lsblks, depth=0):
         outcols.append(pref + sinum(int(lsblk['size'])))
 
         if df:
-            assert df['target'] == lsblk['mountpoint']
             outcols.append(df['pcent'])
             outcols.append(df['used'])
             outcols.append(df['avail'])
