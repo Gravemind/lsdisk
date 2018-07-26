@@ -98,16 +98,9 @@ def print_devices(outtable, lsblks, depth=0):
         name = lsblk["name"]
         outcols.append(pref+name)
 
-        ## mount bind can cause df['target'] != lsblk['mountpoint']
-        ## arbitrarily prefer df's mount point
-        if df:
-            outcols.append(df['target'])
-        else:
-            outcols.append(lsblk['mountpoint'])
-
         info = ""
-        #info += lsblk['type']
-        info += sep(lsblk['tran'])
+        if lsblk['tran'] != 'sata' or lsblk["vendor"] != 'ATA':
+            info += sep(lsblk['tran'])
         info += sep(lsblk["vendor"])
         info += sep(lsblk["model"])
         info += sep(lsblk["partlabel"])
@@ -116,6 +109,13 @@ def print_devices(outtable, lsblks, depth=0):
         outcols.append(pref + info.strip())
 
         outcols.append(pref + sinum(int(lsblk['size'])))
+
+        ## mount bind can cause df['target'] != lsblk['mountpoint']
+        ## arbitrarily prefer df's mount point
+        if df:
+            outcols.append(df['target'])
+        else:
+            outcols.append(lsblk['mountpoint'])
 
         if df:
             outcols.append(df['pcent'])
@@ -126,9 +126,9 @@ def print_devices(outtable, lsblks, depth=0):
             outcols.append('')
             outcols.append('')
 
-        serialuuid = ""
+        serialuuid = pref
         serialuuid += lsblk['serial']
-        serialuuid += " "
+        serialuuid += ","
         serialuuid += lsblk['uuid']
         outcols.append(serialuuid)
 
@@ -146,7 +146,7 @@ def main(rawargs):
     load_df()
 
     table = []
-    table.append([ 'Name', 'Mount', 'Info', 'Size', 'Used%', 'Used', 'Avail', 'Serial and  UUID' ])
+    table.append([ 'Name', 'Info', 'Size', 'Mount', 'Used%', 'Used', 'Avail', 'Serial,UUID' ])
     print_devices(table, lsblk_devices)
 
     maxw = [ max(len(cell) for cell in col) for col in itertools.zip_longest(*table, fillvalue="") ]
