@@ -71,7 +71,7 @@ def sinum(n):
             return (fmt % (n / s[1])) + s[2]
     return fmt % (n / 1e12) + "T"
 
-def print_devices(outtable, lsblks, depth=0):
+def print_devices(outtable, footer, lsblks, depth=0):
     for lsblki, lsblk in enumerate(lsblks):
         pref = ""
         d = depth
@@ -110,18 +110,17 @@ def print_devices(outtable, lsblks, depth=0):
 
         outcols.append(pref + sinum(int(lsblk['size'])))
 
-        ## mount bind can cause df['target'] != lsblk['mountpoint']
-        ## arbitrarily prefer df's mount point
         if df:
+            ## mount bind can cause df['target'] != lsblk['mountpoint']
+            ## arbitrarily prefer df's mount point
+            if df['target'] != lsblk['mountpoint']:
+                footer.append('note: {} has at least two mount point (?): {} and {}'.format(lsblk['name'], df['target'], lsblk['mountpoint']))
             outcols.append(df['target'])
-        else:
-            outcols.append(lsblk['mountpoint'])
-
-        if df:
             outcols.append(df['pcent'])
             outcols.append(df['used'])
             outcols.append(df['avail'])
         else:
+            outcols.append(lsblk['mountpoint'])
             outcols.append('')
             outcols.append('')
             outcols.append('')
@@ -135,7 +134,7 @@ def print_devices(outtable, lsblks, depth=0):
         outtable.append(outcols)
 
         if "children" in lsblk:
-            print_devices(outtable, lsblk['children'], depth + 1)
+            print_devices(outtable, footer, lsblk['children'], depth + 1)
 
 def main(rawargs):
     global args
@@ -147,12 +146,16 @@ def main(rawargs):
 
     table = []
     table.append([ 'Name', 'Info', 'Size', 'Mount', 'Used%', 'Used', 'Avail', 'Serial,UUID' ])
-    print_devices(table, lsblk_devices)
+    footer = []
+    print_devices(table, footer, lsblk_devices)
 
     maxw = [ max(len(cell) for cell in col) for col in itertools.zip_longest(*table, fillvalue="") ]
     maxw[-1] = 0
     for row in table:
         print(" ".join("{:<{}}".format(cell, maxw[i]) for i, cell in enumerate(row)))
+
+    for f in footer:
+        print(f)
 
 if __name__ == "__main__":
     ret = main(sys.argv[1:])
